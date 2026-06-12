@@ -83,6 +83,11 @@ The first two terms are the wavefront fill/drain cost. The `k` term is the actua
 For the default demo, `N = 8` and `K = 16`, so the array runs for `30` cycles and reaches `64/64`
 active PEs at peak.
 
+What we are seeing: the array starts almost empty, then the wavefront fills it up, then for a short
+window every PE is doing useful work, then it drains back down. This is the whole systolic array
+intuition in one picture. The math did not disappear, but once the wave is full, a bunch of MACs are
+happening at the same time. That's the "oh wait this is why hardware matters" moment.
+
 ### 2. Batch Sweep
 
 ![Batch sweep](traces/batch_sweep.svg)
@@ -111,6 +116,11 @@ Larger batches give the hardware more work to stream through after the array is 
 the same fixed fill/drain overhead. In the default `8 x 8` demo, utilization rises from about `6.7%`
 at batch `1` to about `94.8%` at batch `256`.
 
+What we are seeing: batch `1` is brutal because you pay the fill/drain cost and barely give the
+array anything to chew on. As batch grows, the same setup cost gets spread across way more work. This
+is why the high-throughput Sohu story makes sense: if you can keep feeding the machine a big stream
+of transformer work, utilization starts climbing fast.
+
 ### 3. Matmul vs Attention During Decode
 
 ![Decode contrast](traces/contrast_decode.svg)
@@ -138,6 +148,11 @@ Why those terms:
 
 The default demo uses `d_k = 8`, `num_heads = 4`, and `128` decode tokens. Attention grows from `76`
 cycles to `9728` cycles, while the toy matmul cost stays fixed at `12288` cycles.
+
+What we are seeing: matmul is this flat line because the toy model gives each decode step the same
+feed-forward/projection cost. Attention is the line that keeps walking upward because every new token
+has more KV cache to look back at. This is the split that makes the dual-engine idea feel natural:
+one side is regular dense work, the other side is growing context work.
 
 ## Serial vs Overlapped Scheduling
 
@@ -191,9 +206,10 @@ That is:
 28.1% fewer total cycles
 ```
 
-This is one of the cleanest toy-model signals for the Sohu-style idea: even when the amount of math
-is unchanged, separating attention from matmul lets the machine turn more of the timeline into
-useful work.
+What we are seeing: the work did not shrink. The machine just stops waiting around as much. With one
+engine, matmul and attention take turns. With two engines, the attention side can work while the
+matmul side moves on. That is the whole Sohu-style win in mini form: same transformer, same basic
+ops, way better timeline.
 
 ## Operation Cost Summary
 
