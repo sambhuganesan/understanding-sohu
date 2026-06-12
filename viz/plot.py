@@ -54,10 +54,26 @@ def plot_contrast():
     plt.savefig(TRACES / "contrast_decode.png", dpi=160)
 
 
+def plot_schedule_comparison():
+    serial = read_jsonl(TRACES / "schedule_serial.jsonl")
+    overlap = read_jsonl(TRACES / "schedule_overlap.jsonl")
+    serial_cycles = max(row["end"] for row in serial)
+    overlap_cycles = max(row["end"] for row in overlap)
+
+    plt.figure()
+    plt.bar(["one engine", "two engines"], [serial_cycles, overlap_cycles], color=["#6b5b95", "#1b8a5a"])
+    plt.ylabel("total cycles")
+    plt.title("One engine vs two specialized engines")
+    plt.grid(True, axis="y", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(TRACES / "schedule_comparison.png", dpi=160)
+
+
 def main():
     plot_systolic()
     plot_batch()
     plot_contrast()
+    plot_schedule_comparison()
     print(f"wrote charts to {TRACES}")
 
 

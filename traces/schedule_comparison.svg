@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="420" viewBox="0 0 760 420">
+<rect width="100%" height="100%" fill="#fbfbf8"/>
+<text x="380.0" y="24" text-anchor="middle" font-family="Arial" font-size="18" font-weight="700">One engine vs two specialized engines</text>
+<line x1="70" y1="364" x2="736" y2="364" stroke="#222"/>
+<line x1="70" y1="364" x2="70" y2="36" stroke="#222"/>
+<line x1="70" y1="364.0" x2="736" y2="364.0" stroke="#ddd"/>
+<text x="62" y="368.0" text-anchor="end" font-family="Arial" font-size="12">0.00M</text>
+<line x1="70" y1="298.4" x2="736" y2="298.4" stroke="#ddd"/>
+<text x="62" y="302.4" text-anchor="end" font-family="Arial" font-size="12">0.44M</text>
+<line x1="70" y1="232.8" x2="736" y2="232.8" stroke="#ddd"/>
+<text x="62" y="236.8" text-anchor="end" font-family="Arial" font-size="12">0.88M</text>
+<line x1="70" y1="167.2" x2="736" y2="167.2" stroke="#ddd"/>
+<text x="62" y="171.2" text-anchor="end" font-family="Arial" font-size="12">1.32M</text>
+<line x1="70" y1="101.6" x2="736" y2="101.6" stroke="#ddd"/>
+<text x="62" y="105.6" text-anchor="end" font-family="Arial" font-size="12">1.76M</text>
+<line x1="70" y1="36.0" x2="736" y2="36.0" stroke="#ddd"/>
+<text x="62" y="40.0" text-anchor="end" font-family="Arial" font-size="12">2.20M</text>
+<rect x="140.0" y="36.0" width="228.0" height="328.0" fill="#6b5b95"/>
+<text x="254.0" y="28.0" text-anchor="middle" font-family="Arial" font-size="13">2.20M</text>
+<text x="254.0" y="388" text-anchor="middle" font-family="Arial" font-size="13">one engine</text>
+<rect x="438.0" y="128.1" width="228.0" height="235.9" fill="#1b8a5a"/>
+<text x="552.0" y="120.1" text-anchor="middle" font-family="Arial" font-size="13">1.58M</text>
+<text x="552.0" y="388" text-anchor="middle" font-family="Arial" font-size="13">two engines</text>
+<text x="380.0" y="406" text-anchor="middle" font-family="Arial" font-size="14">schedule</text>
+<text x="18" y="210.0" text-anchor="middle" font-family="Arial" font-size="14" transform="rotate(-90 18 210.0)">total cycles</text>
+</svg>

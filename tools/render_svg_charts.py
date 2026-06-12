@@ -30,6 +30,63 @@ def polyline(points: list[tuple[float, float]], color: str) -> str:
     return f'<polyline points="{coords}" fill="none" stroke="{color}" stroke-width="3"/>'
 
 
+def schedule_makespan(path: Path) -> int:
+    rows = read_jsonl(path)
+    return max(row["end"] for row in rows)
+
+
+def svg_bar_chart(
+    path: Path,
+    title: str,
+    x_label: str,
+    y_label: str,
+    bars: list[tuple[str, float, str]],
+) -> None:
+    y_max = max(value for _, value, _ in bars)
+    plot_w = WIDTH - LEFT - RIGHT
+    plot_h = HEIGHT - TOP - BOTTOM
+    x0, y0 = LEFT, HEIGHT - BOTTOM
+    x1, y1 = WIDTH - RIGHT, TOP
+    bar_gap = 70
+    bar_w = (plot_w - bar_gap * (len(bars) + 1)) / len(bars)
+
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" viewBox="0 0 {WIDTH} {HEIGHT}">',
+        '<rect width="100%" height="100%" fill="#fbfbf8"/>',
+        f'<text x="{WIDTH / 2}" y="24" text-anchor="middle" font-family="Arial" font-size="18" font-weight="700">{title}</text>',
+        f'<line x1="{x0}" y1="{y0}" x2="{x1}" y2="{y0}" stroke="#222"/>',
+        f'<line x1="{x0}" y1="{y0}" x2="{x0}" y2="{y1}" stroke="#222"/>',
+    ]
+
+    for i in range(6):
+        frac = i / 5
+        y = y0 - frac * plot_h
+        val = frac * y_max
+        lines.append(f'<line x1="{x0}" y1="{y:.1f}" x2="{x1}" y2="{y:.1f}" stroke="#ddd"/>')
+        lines.append(
+            f'<text x="{x0 - 8}" y="{y + 4:.1f}" text-anchor="end" font-family="Arial" font-size="12">{val / 1_000_000:.2f}M</text>'
+        )
+
+    for index, (label, value, color) in enumerate(bars):
+        x = x0 + bar_gap + index * (bar_w + bar_gap)
+        bar_h = value / y_max * plot_h
+        y = y0 - bar_h
+        lines.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bar_h:.1f}" fill="{color}"/>')
+        lines.append(
+            f'<text x="{x + bar_w / 2:.1f}" y="{y - 8:.1f}" text-anchor="middle" font-family="Arial" font-size="13">{value / 1_000_000:.2f}M</text>'
+        )
+        lines.append(
+            f'<text x="{x + bar_w / 2:.1f}" y="{y0 + 24}" text-anchor="middle" font-family="Arial" font-size="13">{label}</text>'
+        )
+
+    lines.append(f'<text x="{WIDTH / 2}" y="{HEIGHT - 14}" text-anchor="middle" font-family="Arial" font-size="14">{x_label}</text>')
+    lines.append(
+        f'<text x="18" y="{HEIGHT / 2}" text-anchor="middle" font-family="Arial" font-size="14" transform="rotate(-90 18 {HEIGHT / 2})">{y_label}</text>'
+    )
+    lines.append("</svg>")
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def svg_chart(
     path: Path,
     title: str,
@@ -127,6 +184,19 @@ def main() -> None:
         [
             ("matmul", [(r["token"], r["matmul_cycles"]) for r in contrast], "#335c9c"),
             ("attention", [(r["token"], r["attention_cycles"]) for r in contrast], "#c45a2a"),
+        ],
+    )
+
+    serial_cycles = schedule_makespan(TRACES / "schedule_serial.jsonl")
+    overlap_cycles = schedule_makespan(TRACES / "schedule_overlap.jsonl")
+    svg_bar_chart(
+        TRACES / "schedule_comparison.svg",
+        "One engine vs two specialized engines",
+        "schedule",
+        "total cycles",
+        [
+            ("one engine", serial_cycles, "#6b5b95"),
+            ("two engines", overlap_cycles, "#1b8a5a"),
         ],
     )
     print(f"wrote SVG charts to {TRACES}")

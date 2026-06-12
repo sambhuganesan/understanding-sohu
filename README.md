@@ -6,7 +6,7 @@ can benefit from splitting work across two specialized engines:
 - a systolic/matmul engine for dense matrix multiplication
 - an attention/KV-cache engine for context-dependent streaming work
 
-It is a learning model, not a cycle-accurate hardware simulator and not a benchmark. The goal is to
+It is a learning model for me to understand the basics of how Sohu works. The goal was to
 make the tradeoff visible: matmul has regular, reusable structure, while decode-time attention grows
 with context length and has a different memory/compute shape.
 
@@ -141,6 +141,8 @@ cycles to `9728` cycles, while the toy matmul cost stays fixed at `12288` cycles
 
 ## Serial vs Overlapped Scheduling
 
+![Schedule comparison](traces/schedule_comparison.svg)
+
 The simulator emits two schedule traces:
 
 - `traces/schedule_serial.jsonl`
@@ -159,9 +161,39 @@ matmul engine:    token 1 matmul -> token 2 matmul -> token 3 matmul -> ...
 attention engine:        token 1 attention -> token 2 attention -> ...
 ```
 
-This is intentionally caveated. It does not model all dependencies, queues, memory contention, or
-real kernel scheduling. It only shows the architectural idea: if matmul and attention use different
-engines, some work can be overlapped instead of serialized on one shared resource.
+This shows the architectural idea in its simplest form: if matmul and attention use different
+engines, work that would otherwise occupy one shared path can make progress on two specialized paths.
+
+For the default 128-token decode demo, the total work is the same in both schedules:
+
+```text
+matmul work:     1,572,864 cycles
+attention work:    627,456 cycles
+```
+
+The one-engine schedule runs those pieces serially and finishes in:
+
+```text
+2,200,320 cycles
+```
+
+The two-engine schedule overlaps attention with following matmul work and finishes in:
+
+```text
+1,582,592 cycles
+```
+
+That is:
+
+```text
+617,728 cycles saved
+1.39x throughput improvement
+28.1% fewer total cycles
+```
+
+This is one of the cleanest toy-model signals for the Sohu-style idea: even when the amount of math
+is unchanged, separating attention from matmul lets the machine turn more of the timeline into
+useful work.
 
 ## Operation Cost Summary
 
@@ -191,14 +223,14 @@ The systolic implementation performs the same number of MACs:
 M * N * K MACs
 ```
 
-The speedup is not from doing less math. It comes from doing many MACs in parallel across many PEs.
+The win comes from doing many MACs in parallel across many PEs.
 With one PE per output element, the wall-clock cycle estimate becomes:
 
 ```text
 (M - 1) + (N - 1) + K
 ```
 
-instead of a scalar one-MAC-at-a-time estimate of:
+compared with a scalar one-MAC-at-a-time estimate of:
 
 ```text
 M * N * K
@@ -237,9 +269,9 @@ This project was inspired by an article analyzing Etched/Sohu from patents, publ
 principles. The exciting idea is simple: transformers are structured enough that a chip can be built
 around the operations they actually do all day.
 
-Sohu is Etched's transformer-focused ASIC. This repo is a small educational model, not a model of
-Sohu's real implementation. The point is to reproduce the intuition behind why a transformer-only
-chip can be a very powerful idea.
+Sohu is Etched's transformer-focused ASIC. This repo is a small educational model of the core
+mechanisms that make transformer-only hardware compelling: utilization, batching, attention
+specialization, and overlap.
 
 The connection is conceptual:
 
@@ -271,8 +303,7 @@ The systolic cycle model is:
 (M - 1) + (N - 1) + K
 ```
 
-That is the core hardware idea: keep a large grid of MAC units busy instead of doing one operation at
-a time.
+That is the core hardware idea: keep a large grid of MAC units busy with a wavefront of useful work.
 
 Second, batching improves utilization. At high batch size, the same weights can be reused across many
 rows/tokens/requests:
@@ -341,6 +372,7 @@ That is why this toy model is useful: each chart corresponds to one piece of the
 systolic_util.svg     -> keep dense MAC hardware busy
 batch_sweep.svg       -> reuse/amortization makes throughput climb
 contrast_decode.svg   -> attention is a separate growing workload
+schedule_comparison.svg -> two specialized engines shorten the timeline
 schedule_*.jsonl      -> two engines can overlap work
 ```
 
@@ -356,18 +388,17 @@ schedule_*.jsonl      -> two engines can overlap work
 - `tools/smoke_check.py`: sanity checks for generated traces.
 - `viz/plot.py`: optional matplotlib PNG chart generator.
 
-## Model Scope
+## Model Focus
 
-This is a small model built to make the core ideas easy to see. It keeps the focus on utilization,
-batching, attention growth, and engine overlap, so it leaves out:
+This model keeps the spotlight on the pieces that make the Sohu story exciting:
 
-- real memory latency and bandwidth limits
-- HBM banking, cache hierarchy, and contention
-- numerical precision effects
-- actual softmax kernel costs
-- host/device scheduling
-- compiler transformations
-- quantization, sparsity, and operator fusion
+- systolic wavefront timing
+- PE utilization
+- batch amortization
+- attention growth with context length
+- simple softmax cost
+- separate matmul and attention schedules
+- overlap between specialized engines
 
 That simplicity is the feature: the simulator is small enough to reason about by hand while still
 showing why transformer-focused hardware can be such a strong design direction.
