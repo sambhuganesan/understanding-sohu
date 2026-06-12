@@ -16,6 +16,6 @@ AttnCost attention_cost(int context_len, int d_k, int lanes) {
   long long macs = 2 * l * dk;
   long long softmax_ops = 3 * l;
   long long cycles = (macs + lanes - 1) / lanes + softmax_ops;
-  
+
   return {kv_reads, macs, softmax_ops, cycles};
 }

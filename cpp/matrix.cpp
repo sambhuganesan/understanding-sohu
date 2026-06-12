@@ -1,7 +1,7 @@
 #include "matrix.h"
 
-#include <stdexcept>
 #include <cmath>
+#include <stdexcept>
 
 using namespace std;
 

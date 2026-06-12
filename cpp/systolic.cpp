@@ -9,7 +9,7 @@ SystolicResult simulate_systolic(int n, int m, int k) {
     throw logic_error("systolic dimensions must be positive");
   }
 
-  int total_cycles = (n-1) + (m-1) + k;
+  int total_cycles = (n - 1) + (m - 1) + k;
   vector<int> active_per_cycle(total_cycles, 0);
 
   for (int t = 0; t < total_cycles; t++) {
@@ -29,9 +29,6 @@ SystolicResult simulate_systolic(int n, int m, int k) {
 }
 
 Matrix systolic_tile_matmul(const Matrix& a, const Matrix& b) {
-  // TODO:
-  // Compute A(N,K) x B(K,N) using the same timing idea as simulate_systolic.
-  // This should eventually match naive_matmul(a, b).output.
   if (a.cols() != b.rows()) {
     throw logic_error("wrong dimension");
   }
@@ -41,15 +38,15 @@ Matrix systolic_tile_matmul(const Matrix& a, const Matrix& b) {
 
   Matrix result(m, n);
 
-  int total_cycles = (m-1) + (n-1) + k_depth;
+  int total_cycles = (m - 1) + (n - 1) + k_depth;
 
   for (int t = 0; t < total_cycles; t++) {
-    for (int i = 0; i < a.rows(); i++) {
-      for (int j = 0; j < b.cols(); j++) {
-        int dot_index = t - (i+j);
+    for (int i = 0; i < m; i++) {
+      for (int j = 0; j < n; j++) {
+        int dot_index = t - (i + j);
 
         if (0 <= dot_index && dot_index < k_depth) {
-          result(i, j) += a(i, dot_index) * b(dot_index, j); 
+          result(i, j) += a(i, dot_index) * b(dot_index, j);
         }
       }
     }
@@ -66,7 +63,7 @@ vector<BatchPoint> batch_sweep(int n, int m, int max_batch) {
   vector<BatchPoint> points;
 
   for (int batch = 1; batch <= max_batch; batch *= 2) {
-    int overhead = (n-1) + (m-1);
+    int overhead = (n - 1) + (m - 1);
     int cycles = overhead + batch;
     double util = static_cast<double>(batch) / cycles;
 
