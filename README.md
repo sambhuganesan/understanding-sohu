@@ -201,6 +201,10 @@ That is:
 28.1% fewer total cycles
 ```
 
+This overlap schedule assumes no memory contention and no extra dependency stalls beyond "attention
+starts after that token's matmul finishes", so the `1.39x` is an idealized ceiling on what overlap
+can buy in this toy model, not a realistic benchmark.
+
 The amazing part is the amount of work we did, didn't change. The machine just stops waiting around as much. With one engine, matmul and attention take turns. With two engines, the attention side can work while the matmul side moves on. That is why Sohu is so good. It's the same transformer, same basic ops but way better timeline.
 
 ### 5. Toy Throughput
@@ -220,7 +224,8 @@ one engine:  128 / 2,200,320 = 58.2 tokens per million cycles
 two engines: 128 / 1,582,592 = 80.9 tokens per million cycles
 ```
 
-That is the throughput bet in the tiny version. This is why throughput
+That is the throughput bet in the tiny version. Again, this is the idealized toy ceiling from the
+simple overlap schedule, not a benchmark. This is why throughput
 is such a big deal for Etched: when you are serving many requests, the question is "how many
 tokens can this box produce per second?" and the two-engine schedule is clearly producing more tokens
 for the same cycle budget.
