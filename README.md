@@ -385,7 +385,383 @@ This simulator mirrors that point with two deliberately simple models:
 The overlap schedule then asks: what if these two kinds of work are allowed to make progress on
 separate engines?
 
-## 9. Files
+## 9. Understanding The Code
+
+This section is here so I can explain the project from scratch if someone asks me in an interview.
+The code is split into small files, and each file owns one idea.
+
+### `matrix.h` and `matrix.cpp`
+
+This is the tiny matrix class used by the simulator.
+
+The matrix stores values in one flat vector:
+
+```cpp
+vector<float> data_;
+```
+
+If the matrix has `cols_` columns, then element `(row, col)` lives at:
+
+```text
+row * cols_ + col
+```
+
+So:
+
+```cpp
+data_.at(row * cols_ + col)
+```
+
+is the whole row-major indexing trick.
+
+There are two `operator()` functions:
+
+```cpp
+float& operator()(int row, int col);
+float operator()(int row, int col) const;
+```
+
+The first one returns a reference, so we can write:
+
+```cpp
+matrix(0, 1) = 5.0f;
+```
+
+The second one is for reading from a `const Matrix`.
+
+`almost_equal` compares two matrices element by element with a small epsilon. This matters because
+floating point values should usually be compared with tolerance instead of exact equality.
+
+### `naive_matmul.cpp`
+
+This is the reference implementation.
+
+For:
+
+```text
+A: M x K
+B: K x N
+C: M x N
+```
+
+the code does the normal three-loop matmul:
+
+```cpp
+for each row r
+  for each col c
+    for each dot-product index k
+      C(r, c) += A(r, k) * B(k, c)
+```
+
+It also counts MACs:
+
+```cpp
+number_of_MACs++;
+```
+
+This is the golden model. Later, `systolic_tile_matmul` should produce the same output as this.
+
+### `systolic.cpp`
+
+This file has three pieces:
+
+```cpp
+simulate_systolic(...)
+systolic_tile_matmul(...)
+batch_sweep(...)
+```
+
+`simulate_systolic` does not multiply values. It only counts how many PEs are active each cycle.
+
+For an output grid:
+
+```text
+rows x cols
+```
+
+PE `(i, j)` starts at:
+
+```text
+i + j
+```
+
+because data has to travel down `i` steps and right `j` steps. The PE stays active for `k` cycles.
+So at cycle `t`, the PE is active if:
+
+```cpp
+start <= t && t < start + k
+```
+
+The total cycles are:
+
+```text
+(rows - 1) + (cols - 1) + k
+```
+
+because the bottom-right PE starts at `(rows - 1) + (cols - 1)` and then still has to do `k` MACs.
+
+`systolic_tile_matmul` does the actual multiplication, but spread across time. For output element
+`C(i, j)`, we compute which dot-product index it should work on at cycle `t`:
+
+```cpp
+int dot_index = t - (i + j);
+```
+
+If `dot_index` is valid:
+
+```cpp
+0 <= dot_index && dot_index < k_depth
+```
+
+then this PE performs:
+
+```cpp
+result(i, j) += a(i, dot_index) * b(dot_index, j);
+```
+
+That is the systolic version of the same dot product from naive matmul.
+
+`batch_sweep` is the tiny throughput/utilization experiment. It models a fixed fill/drain overhead:
+
+```text
+overhead = (rows - 1) + (cols - 1)
+```
+
+and then asks what happens as useful work grows:
+
+```text
+cycles = overhead + batch
+util = batch / cycles
+```
+
+This is why the batch graph climbs.
+
+### `attention.cpp`
+
+This file estimates decode attention cost for one head.
+
+For one decode token:
+
+```text
+q: 1 x D
+K: L x D
+V: L x D
+```
+
+where:
+
+```text
+L = context_len
+D = d_k
+```
+
+The attention score computation is:
+
+```text
+q * K^T
+```
+
+That costs:
+
+```text
+L * D MACs
+```
+
+Then after softmax, value aggregation is:
+
+```text
+softmax(scores) * V
+```
+
+That also costs:
+
+```text
+L * D MACs
+```
+
+So total attention MACs per head are:
+
+```text
+2 * L * D
+```
+
+The code models simple softmax as:
+
+```text
+exp + sum + divide
+```
+
+for each context token, so:
+
+```text
+softmax_ops = 3 * L
+```
+
+Then cycles are:
+
+```cpp
+ceil(macs / lanes) + softmax_ops
+```
+
+In code, integer ceil division is:
+
+```cpp
+(macs + lanes - 1) / lanes
+```
+
+`lanes` means how many MACs the attention engine can do in parallel per cycle.
+
+### `schedule.cpp`
+
+This file turns costs into timelines.
+
+First, `contrast_decode` builds one `DecodePoint` per generated token:
+
+```cpp
+for token = 1 to tokens
+```
+
+For token `t`, the context length is:
+
+```cpp
+context_len = token;
+```
+
+Then it calls:
+
+```cpp
+attention_cost(context_len, d_k)
+```
+
+That gives the cost for one head. The code multiplies by `num_heads`:
+
+```cpp
+attention_cycles = per_head.cycles * num_heads;
+```
+
+The matmul cycles are passed in as a fixed value, so each row stores:
+
+```text
+token, context_len, matmul_cycles, attention_cycles
+```
+
+Then we create two schedules.
+
+`serial_schedule` is the one-engine baseline. It has one cursor:
+
+```cpp
+long long cursor = 0;
+```
+
+The cursor means "when is the one shared engine free?"
+
+For each token:
+
+```cpp
+matmul_start = cursor;
+matmul_end = matmul_start + point.matmul_cycles;
+attention_start = matmul_end;
+attention_end = attention_start + point.attention_cycles;
+cursor = attention_end;
+```
+
+So the schedule is:
+
+```text
+token 1 matmul -> token 1 attention -> token 2 matmul -> token 2 attention -> ...
+```
+
+`overlap_schedule` is the two-engine idealized model. It has two cursors:
+
+```cpp
+long long matmul_cursor = 0;
+long long attention_cursor = 0;
+```
+
+The matmul engine runs matmul work one after another:
+
+```cpp
+matmul_start = matmul_cursor;
+matmul_end = matmul_start + point.matmul_cycles;
+matmul_cursor = matmul_end;
+```
+
+Attention has its own engine, but it still has to wait for that token's matmul to finish. So the key
+line is:
+
+```cpp
+attention_start = max(attention_cursor, matmul_end);
+```
+
+This means attention starts when both things are true:
+
+```text
+the attention engine is free
+this token's matmul is done
+```
+
+Then:
+
+```cpp
+attention_end = attention_start + point.attention_cycles;
+attention_cursor = attention_end;
+```
+
+This is why the overlap trace has a shorter timeline. It is an idealized schedule, but it shows the
+basic Sohu idea very clearly.
+
+### `trace.cpp`
+
+This file writes the simulator outputs into JSONL files under `traces/`.
+
+JSONL means one JSON object per line:
+
+```json
+{"cycle":0,"active_pes":1}
+{"cycle":1,"active_pes":3}
+```
+
+The chart scripts read these files and turn them into SVG/PNG graphs.
+
+The helper:
+
+```cpp
+open_trace(...)
+```
+
+opens a file and sets fixed decimal formatting.
+
+Then each writer function writes one kind of trace:
+
+- `write_systolic_trace`: one row per cycle
+- `write_batch_trace`: one row per batch size
+- `write_contrast_trace`: one row per decode token
+- `write_schedule_trace`: one row per scheduled operation
+
+### `main.cpp`
+
+`main.cpp` ties everything together:
+
+1. Create the `traces/` directory.
+2. Run the systolic utilization demo.
+3. Compare `naive_matmul` against `systolic_tile_matmul`.
+4. Run the batch sweep.
+5. Build the decode contrast data.
+6. Write serial and overlap schedules.
+7. Print a short summary.
+
+The important correctness check is:
+
+```cpp
+if (!almost_equal(reference.output, dut)) {
+  throw logic_error("systolic DUT output did not match naive reference");
+}
+```
+
+That says: the systolic timing model can be weird, but the final matrix result still has to match
+normal matmul.
+
+## 10. Files
 
 - `cpp/matrix.*`: small row-major matrix class.
 - `cpp/naive_matmul.*`: reference matmul implementation.
