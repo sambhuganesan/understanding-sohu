@@ -83,17 +83,14 @@ The first two terms are the wavefront fill/drain cost. The `k` term is the actua
 For the default demo, `N = 8` and `K = 16`, so the array runs for `30` cycles and reaches `64/64`
 active PEs at peak.
 
-What we are seeing: the array starts almost empty, then the wavefront fills it up, then for a short
-window every PE is doing useful work, then it drains back down. This is the whole systolic array
-intuition in one picture. The math did not disappear, but once the wave is full, a bunch of MACs are
-happening at the same time. That's the "oh wait this is why hardware matters" moment.
+Note that the array starts almost empty, then the wavefront fills it up, then for a short window every PE is doing useful work, then it drains back down. This is the whole reason systolic array are so much better than normal naive matrix multiplication. Once the wave is full, many MACs are
+happening at the same time which makes it much faster.
 
 ### 2. Batch Sweep
 
 ![Batch sweep](traces/batch_sweep.svg)
 
-This chart is a simplified utilization experiment. It asks: if the systolic array has a fixed
-fill/drain overhead, how much does more consecutive work help?
+Another thing we want to think about is if the systolic array has a fixed fill/drain overhead, how much does more consecutive work help? In other words how much does batching help?
 
 The model uses:
 
@@ -103,8 +100,7 @@ cycles = overhead + batch
 utilization = batch / cycles
 ```
 
-Here, `batch` is a toy stand-in for useful steady-state work. In a real transformer matmul, batch is
-often the number of activation rows:
+Here, `batch` is the number of activation rows:
 
 ```text
 X: batch x hidden
@@ -116,10 +112,8 @@ Larger batches give the hardware more work to stream through after the array is 
 the same fixed fill/drain overhead. In the default `8 x 8` demo, utilization rises from about `6.7%`
 at batch `1` to about `94.8%` at batch `256`.
 
-What we are seeing: batch `1` is brutal because you pay the fill/drain cost and barely give the
-array anything to chew on. As batch grows, the same setup cost gets spread across way more work. This
-is why the high-throughput Sohu story makes sense: if you can keep feeding the machine a big stream
-of transformer work, utilization starts climbing fast.
+This makes sense. Batch size of `1` is brutal because you pay the fill/drain cost and barely give the
+array anything to multiply with. As batch grows, the same setup cost gets spread across way more work. If you can keep feeding the machine a big stream of transformer work, utilization starts climbing fast.
 
 ### 3. Matmul vs Attention During Decode
 
@@ -149,10 +143,12 @@ Why those terms:
 The default demo uses `d_k = 8`, `num_heads = 4`, and `128` decode tokens. Attention grows from `76`
 cycles to `9728` cycles, while the toy matmul cost stays fixed at `12288` cycles.
 
-What we are seeing: matmul is this flat line because the toy model gives each decode step the same
-feed-forward/projection cost. Attention is the line that keeps walking upward because every new token
-has more KV cache to look back at. This is the split that makes the dual-engine idea feel natural:
-one side is regular dense work, the other side is growing context work.
+Note that the matmul is a flat line because the model gives each decode step the same
+feed-forward/projection cost: `3 * d_model * d_model` for QKV projection, `d_model * d_model` for
+output projection, and `2 * d_model * d_ff` for the FFN, which is `12288` cycles with `d_model = 32`
+and `d_ff = 128`. Attention is the line that keeps walking upward because every new token has more
+KV cache to look back at. This is the split that Sohu takes advantage of. One side is regular dense
+work, the other side is growing context work.
 
 ## Serial vs Overlapped Scheduling
 
@@ -176,7 +172,7 @@ matmul engine:    token 1 matmul -> token 2 matmul -> token 3 matmul -> ...
 attention engine:        token 1 attention -> token 2 attention -> ...
 ```
 
-This shows the architectural idea in its simplest form: if matmul and attention use different
+This shows the architectural idea in its simplest form. If matmul and attention use different
 engines, work that would otherwise occupy one shared path can make progress on two specialized paths.
 
 For the default 128-token decode demo, the total work is the same in both schedules:
@@ -206,10 +202,30 @@ That is:
 28.1% fewer total cycles
 ```
 
-What we are seeing: the work did not shrink. The machine just stops waiting around as much. With one
-engine, matmul and attention take turns. With two engines, the attention side can work while the
-matmul side moves on. That is the whole Sohu-style win in mini form: same transformer, same basic
-ops, way better timeline.
+The work did not shrink. The machine just stops waiting around as much. With one engine, matmul and attention take turns. With two engines, the attention side can work while the matmul side moves on. That is why Sohu is so good. It's the same transformer, same basic ops but way better timeline.
+
+### Toy Throughput
+
+![Throughput comparison](traces/throughput_comparison.svg)
+
+Now we can say the same thing in throughput terms. Throughput is:
+
+```text
+tokens generated / total cycles
+```
+
+For this demo, both schedules generate `128` tokens.
+
+```text
+one engine:  128 / 2,200,320 = 58.2 tokens per million cycles
+two engines: 128 / 1,582,592 = 80.9 tokens per million cycles
+```
+
+That is the throughput bet in the tiny version. We did not make the transformer smaller. We did not
+delete attention. We just gave the machine a better way to keep work moving. This is why throughput
+is such a big deal for Etched: when you are serving many requests, the question becomes "how many
+tokens can this box produce per second?" and the two-engine schedule is clearly producing more tokens
+for the same cycle budget.
 
 ## Operation Cost Summary
 
@@ -229,8 +245,6 @@ the reference implementation performs:
 M * N * K MACs
 ```
 
-It is the golden model used to check the systolic result.
-
 ### Systolic Matmul
 
 The systolic implementation performs the same number of MACs:
@@ -239,7 +253,7 @@ The systolic implementation performs the same number of MACs:
 M * N * K MACs
 ```
 
-The win comes from doing many MACs in parallel across many PEs.
+However we do many MACs in parallel across many PEs.
 With one PE per output element, the wall-clock cycle estimate becomes:
 
 ```text
@@ -252,7 +266,7 @@ compared with a scalar one-MAC-at-a-time estimate of:
 M * N * K
 ```
 
-Same work, more spatial parallelism.
+It's the same work but we take advantage of the spatial parallelism.
 
 ### Attention
 
@@ -282,17 +296,14 @@ Unlike the fixed matmul cost in the demo, this grows with `L`, the current conte
 ## How This Relates To Sohu
 
 This project was inspired by an article analyzing Etched/Sohu from patents, public claims, and first
-principles. The exciting idea is simple: transformers are structured enough that a chip can be built
-around the operations they actually do all day.
+principles. 
 
-Sohu is Etched's transformer-focused ASIC. This repo is a small educational model of the core
-mechanisms that make transformer-only hardware compelling: utilization, batching, attention
+This repo was a way for me to learn the core mechanisms that make transformer-only hardware compelling: utilization, batching, attention
 specialization, and overlap.
 
-The connection is conceptual:
+We can also see that:
 
-- Transformer inference has two major personalities: dense matmul/feed-forward work and KV-cache
-  attention work.
+- Transformer inference has two major personalities: dense matmul/feed-forward work and KV-cache attention work.
 - Dense feed-forward work likes large, regular systolic-style dataflow and high PE utilization.
 - Decode attention is more context-length-dependent, memory/streaming shaped, and includes softmax.
 - A dual-engine design gives each workload a compute path shaped for its own behavior.
@@ -319,7 +330,7 @@ The systolic cycle model is:
 (M - 1) + (N - 1) + K
 ```
 
-That is the core hardware idea: keep a large grid of MAC units busy with a wavefront of useful work.
+The main idea is keep a large grid of MAC units busy with a wavefront of useful work.
 
 Second, batching improves utilization. At high batch size, the same weights can be reused across many
 rows/tokens/requests:
@@ -371,27 +382,6 @@ This simulator mirrors that point with two deliberately simple models:
 The overlap schedule then asks: what if these two kinds of work are allowed to make progress on
 separate engines?
 
-### The Positive Sohu Mental Model
-
-The demo gives a compact mental model for why Sohu can be successful:
-
-- Transformers spend enormous time in a small set of repeated operations.
-- Those operations are regular enough to specialize.
-- Systolic arrays can turn matrix multiplication into a high-utilization wavefront.
-- High batch sizes let weights be reused across many rows of work.
-- Attention has enough unique structure to deserve a dedicated path.
-- Running matmul/feed-forward and attention in parallel can improve total token throughput.
-
-That is why this toy model is useful: each chart corresponds to one piece of the Sohu story.
-
-```text
-systolic_util.svg     -> keep dense MAC hardware busy
-batch_sweep.svg       -> reuse/amortization makes throughput climb
-contrast_decode.svg   -> attention is a separate growing workload
-schedule_comparison.svg -> two specialized engines shorten the timeline
-schedule_*.jsonl      -> two engines can overlap work
-```
-
 ## Files
 
 - `cpp/matrix.*`: small row-major matrix class.
@@ -415,6 +405,7 @@ This model keeps the spotlight on the pieces that make the Sohu story exciting:
 - simple softmax cost
 - separate matmul and attention schedules
 - overlap between specialized engines
+- toy throughput
 
 That simplicity is the feature: the simulator is small enough to reason about by hand while still
 showing why transformer-focused hardware can be such a strong design direction.

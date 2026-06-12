@@ -69,11 +69,32 @@ def plot_schedule_comparison():
     plt.savefig(TRACES / "schedule_comparison.png", dpi=160)
 
 
+def plot_throughput_comparison():
+    serial = read_jsonl(TRACES / "schedule_serial.jsonl")
+    overlap = read_jsonl(TRACES / "schedule_overlap.jsonl")
+    token_count = max(row["token"] for row in serial)
+    serial_cycles = max(row["end"] for row in serial)
+    overlap_cycles = max(row["end"] for row in overlap)
+    throughputs = [
+        token_count / serial_cycles * 1_000_000,
+        token_count / overlap_cycles * 1_000_000,
+    ]
+
+    plt.figure()
+    plt.bar(["one engine", "two engines"], throughputs, color=["#6b5b95", "#1b8a5a"])
+    plt.ylabel("tokens per million cycles")
+    plt.title("Toy decode throughput")
+    plt.grid(True, axis="y", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(TRACES / "throughput_comparison.png", dpi=160)
+
+
 def main():
     plot_systolic()
     plot_batch()
     plot_contrast()
     plot_schedule_comparison()
+    plot_throughput_comparison()
     print(f"wrote charts to {TRACES}")
 
 

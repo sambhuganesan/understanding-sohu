@@ -41,6 +41,9 @@ def svg_bar_chart(
     x_label: str,
     y_label: str,
     bars: list[tuple[str, float, str]],
+    value_scale: float = 1_000_000,
+    value_suffix: str = "M",
+    value_decimals: int = 2,
 ) -> None:
     y_max = max(value for _, value, _ in bars)
     plot_w = WIDTH - LEFT - RIGHT
@@ -64,7 +67,7 @@ def svg_bar_chart(
         val = frac * y_max
         lines.append(f'<line x1="{x0}" y1="{y:.1f}" x2="{x1}" y2="{y:.1f}" stroke="#ddd"/>')
         lines.append(
-            f'<text x="{x0 - 8}" y="{y + 4:.1f}" text-anchor="end" font-family="Arial" font-size="12">{val / 1_000_000:.2f}M</text>'
+            f'<text x="{x0 - 8}" y="{y + 4:.1f}" text-anchor="end" font-family="Arial" font-size="12">{val / value_scale:.{value_decimals}f}{value_suffix}</text>'
         )
 
     for index, (label, value, color) in enumerate(bars):
@@ -73,7 +76,7 @@ def svg_bar_chart(
         y = y0 - bar_h
         lines.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bar_h:.1f}" fill="{color}"/>')
         lines.append(
-            f'<text x="{x + bar_w / 2:.1f}" y="{y - 8:.1f}" text-anchor="middle" font-family="Arial" font-size="13">{value / 1_000_000:.2f}M</text>'
+            f'<text x="{x + bar_w / 2:.1f}" y="{y - 8:.1f}" text-anchor="middle" font-family="Arial" font-size="13">{value / value_scale:.{value_decimals}f}{value_suffix}</text>'
         )
         lines.append(
             f'<text x="{x + bar_w / 2:.1f}" y="{y0 + 24}" text-anchor="middle" font-family="Arial" font-size="13">{label}</text>'
@@ -189,6 +192,8 @@ def main() -> None:
 
     serial_cycles = schedule_makespan(TRACES / "schedule_serial.jsonl")
     overlap_cycles = schedule_makespan(TRACES / "schedule_overlap.jsonl")
+    serial_schedule = read_jsonl(TRACES / "schedule_serial.jsonl")
+    token_count = max(row["token"] for row in serial_schedule)
     svg_bar_chart(
         TRACES / "schedule_comparison.svg",
         "One engine vs two specialized engines",
@@ -198,6 +203,19 @@ def main() -> None:
             ("one engine", serial_cycles, "#6b5b95"),
             ("two engines", overlap_cycles, "#1b8a5a"),
         ],
+    )
+    svg_bar_chart(
+        TRACES / "throughput_comparison.svg",
+        "Toy decode throughput",
+        "schedule",
+        "tokens per million cycles",
+        [
+            ("one engine", token_count / serial_cycles * 1_000_000, "#6b5b95"),
+            ("two engines", token_count / overlap_cycles * 1_000_000, "#1b8a5a"),
+        ],
+        value_scale=1,
+        value_suffix="",
+        value_decimals=1,
     )
     print(f"wrote SVG charts to {TRACES}")
 
