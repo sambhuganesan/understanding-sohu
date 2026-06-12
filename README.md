@@ -150,7 +150,7 @@ and `d_ff = 128`. Attention is the line that keeps walking upward because every 
 KV cache to look back at. This is the split that Sohu takes advantage of. One side is regular dense
 work, the other side is growing context work.
 
-## Serial vs Overlapped Scheduling
+## 4. Serial vs Overlapped Scheduling
 
 ![Schedule comparison](traces/schedule_comparison.svg)
 
@@ -172,8 +172,7 @@ matmul engine:    token 1 matmul -> token 2 matmul -> token 3 matmul -> ...
 attention engine:        token 1 attention -> token 2 attention -> ...
 ```
 
-This shows the architectural idea in its simplest form. If matmul and attention use different
-engines, work that would otherwise occupy one shared path can make progress on two specialized paths.
+This shows the architectural idea in a very simple form. If matmul and attention use different engines, work that would otherwise occupy one shared path can make progress on two specialized paths.
 
 For the default 128-token decode demo, the total work is the same in both schedules:
 
@@ -202,9 +201,9 @@ That is:
 28.1% fewer total cycles
 ```
 
-The work did not shrink. The machine just stops waiting around as much. With one engine, matmul and attention take turns. With two engines, the attention side can work while the matmul side moves on. That is why Sohu is so good. It's the same transformer, same basic ops but way better timeline.
+The amazing part is the amount of work we did, didn't change. The machine just stops waiting around as much. With one engine, matmul and attention take turns. With two engines, the attention side can work while the matmul side moves on. That is why Sohu is so good. It's the same transformer, same basic ops but way better timeline.
 
-### Toy Throughput
+### 5. Toy Throughput
 
 ![Throughput comparison](traces/throughput_comparison.svg)
 
@@ -221,13 +220,12 @@ one engine:  128 / 2,200,320 = 58.2 tokens per million cycles
 two engines: 128 / 1,582,592 = 80.9 tokens per million cycles
 ```
 
-That is the throughput bet in the tiny version. We did not make the transformer smaller. We did not
-delete attention. We just gave the machine a better way to keep work moving. This is why throughput
-is such a big deal for Etched: when you are serving many requests, the question becomes "how many
+That is the throughput bet in the tiny version. This is why throughput
+is such a big deal for Etched: when you are serving many requests, the question is "how many
 tokens can this box produce per second?" and the two-engine schedule is clearly producing more tokens
 for the same cycle budget.
 
-## Operation Cost Summary
+## 6. Operation Cost Summary
 
 ### Naive Matmul
 
@@ -293,7 +291,7 @@ That gives the toy cost:
 
 Unlike the fixed matmul cost in the demo, this grows with `L`, the current context length.
 
-## How This Relates To Sohu
+## 7. How This Relates To Sohu
 
 This project was inspired by an article analyzing Etched/Sohu from patents, public claims, and first
 principles. 
@@ -301,7 +299,7 @@ principles.
 This repo was a way for me to learn the core mechanisms that make transformer-only hardware compelling: utilization, batching, attention
 specialization, and overlap.
 
-We can also see that:
+From this I learned that:
 
 - Transformer inference has two major personalities: dense matmul/feed-forward work and KV-cache attention work.
 - Dense feed-forward work likes large, regular systolic-style dataflow and high PE utilization.
@@ -310,10 +308,10 @@ We can also see that:
 - Independent memory paths can let weight traffic and KV-cache traffic move at the same time.
 - If the engines run independently, feed-forward/matmul work and attention work may overlap.
 
-That is the architecture idea this demo makes visible. It helps explain why a transformer ASIC can
-be an excellent fit for high-throughput inference alongside more general-purpose accelerators.
+It helps explain why a transformer ASIC can
+be an excellent fit for high-throughput inference alongside more general-purpose accelerators and I fully believe that this can be a huge breakthrough. 
 
-### Why The Upside Can Be Large
+### 8. The Upside is LARGE
 
 The toy computations show three compounding wins that make a Sohu-like architecture exciting.
 
@@ -382,7 +380,7 @@ This simulator mirrors that point with two deliberately simple models:
 The overlap schedule then asks: what if these two kinds of work are allowed to make progress on
 separate engines?
 
-## Files
+## 9. Files
 
 - `cpp/matrix.*`: small row-major matrix class.
 - `cpp/naive_matmul.*`: reference matmul implementation.
@@ -393,19 +391,3 @@ separate engines?
 - `tools/render_svg_charts.py`: no-dependency SVG chart generator.
 - `tools/smoke_check.py`: sanity checks for generated traces.
 - `viz/plot.py`: optional matplotlib PNG chart generator.
-
-## Model Focus
-
-This model keeps the spotlight on the pieces that make the Sohu story exciting:
-
-- systolic wavefront timing
-- PE utilization
-- batch amortization
-- attention growth with context length
-- simple softmax cost
-- separate matmul and attention schedules
-- overlap between specialized engines
-- toy throughput
-
-That simplicity is the feature: the simulator is small enough to reason about by hand while still
-showing why transformer-focused hardware can be such a strong design direction.
