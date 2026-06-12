@@ -387,8 +387,7 @@ separate engines?
 
 ## 9. Understanding The Code
 
-This section is here so I can explain the project from scratch if someone asks me in an interview.
-The code is split into small files, and each file owns one idea.
+This section is here so I can explain what the code does. The code is split into small files, and each file owns one idea.
 
 ### `matrix.h` and `matrix.cpp`
 
